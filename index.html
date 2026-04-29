@@ -67,9 +67,27 @@ async function initAuth(){
   playerId = user.user.uid;
 }
 
-async function initCamera(){
-  const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-  document.getElementById('camera').srcObject = stream;
+async function initCamera() {
+  try {
+    const video = document.getElementById("camera");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" }
+      },
+      audio: false
+    });
+
+    video.srcObject = stream;
+
+    video.onloadedmetadata = async () => {
+      await video.play();
+    };
+
+  } catch (error) {
+    console.error("Error cámara:", error);
+    alert(error.message);
+  }
 }
 
 function initGPS(){
