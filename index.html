@@ -28,7 +28,7 @@
   </style>
 </head>
 <body>
-  <video id="camera" autoplay playsinline></video>
+  <video id="camera" autoplay playsinline muted></video>
 
   <div id="hud">
     <div id="crosshair">+</div>
@@ -71,12 +71,25 @@ async function initCamera() {
   try {
     const video = document.getElementById("camera");
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" }
-      },
-      audio: false
-    });
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(d => d.kind === "videoinput");
+
+    console.log("Cámaras:", cameras);
+
+    let stream;
+
+    // Si hay más de una cámara, usa la última (normalmente trasera)
+    if (cameras.length > 1) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: cameras[cameras.length - 1].deviceId }
+        }
+      });
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true
+      });
+    }
 
     video.srcObject = stream;
 
@@ -84,9 +97,9 @@ async function initCamera() {
       await video.play();
     };
 
-  } catch (error) {
-    console.error("Error cámara:", error);
-    alert(error.message);
+  } catch (err) {
+    console.error(err);
+    alert("Error al abrir cámara: " + err.message);
   }
 }
 
