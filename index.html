@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR Shooter Arena</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#000; color:#fff; }
+    #camera { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; }
+    #hud { position:fixed; inset:0; z-index:2; pointer-events:none; }
+    #crosshair {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      font-size:40px;
+    }
+    #players { position:absolute; top:20px; left:20px; }
+    #controls {
+      position:fixed; bottom:20px; width:100%; text-align:center; z-index:3;
+    }
+    button {
+      padding:15px 25px; border:none; border-radius:10px;
+      font-size:18px; cursor:pointer;
+    }
+    #qr-reader { width:300px; margin:20px auto; }
+  </style>
+</head>
+<body>
+  <video id="camera" autoplay playsinline></video>
+
+  <div id="hud">
+    <div id="crosshair">+</div>
+    <div id="players"></div>
+  </div>
+
+  <div id="controls">
+    <button id="scanBtn">Escanear QR</button>
+    <button id="shootBtn">Disparar</button>
+  </div>
+
+  <div id="qr-reader" style="display:none"></div>
+
+<script>
+// CONFIGURAR FIREBASE
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_PROYECTO.firebaseapp.com",
+  projectId: "TU_PROYECTO"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let currentMatch = null;
+let playerId = null;
+let myPosition = null;
+let players = {};
+
+async function initAuth(){
+  const user = await firebase.auth().signInAnonymously();
+  playerId = user.user.uid;
+}
+
+async function initCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+  document.getElementById('camera').srcObject = stream;
+}
+
+function initGPS(){
+  navigator.geolocation.watchPosition(async(pos)=>{
+    myPosition = {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      hp: players[playerId]?.hp || 100
+    };
+
+    if(currentMatch){
+      await db.collection('matches').doc(currentMatch)
+      .collection('players').doc(playerId)
+      .set(myPosition,{merge:true});
+    }
+  });
+}
+
+function scanQR(){
+  document.getElementById('qr-reader').style.display='block';
+
+  const qr = new Html5Qrcode('qr-reader');
+  qr.start(
+    { facingMode:'environment' },
+    { fps:10, qrbox:250 },
+    async(decodedText)=>{
+      currentMatch = decodedText;
+      await joinMatch(currentMatch);
+      qr.stop();
+      document.getElementById('qr-reader').style.display='none';
+    }
+  );
+}
+
+async function joinMatch(matchId){
+  await db.collection('matches').doc(matchId)
+    .collection('players').doc(playerId)
+    .set({ hp:100 });
+
+  listenPlayers();
+}
+
+function listenPlayers(){
+  db.collection('matches').doc(currentMatch)
+    .collection('players')
+    .onSnapshot(snapshot=>{
+      players = {};
+      snapshot.forEach(doc=>{
+        players[doc.id] = doc.data();
+      });
+      renderPlayers();
+    });
+}
+
+function renderPlayers(){
+  const container = document.getElementById('players');
+  container.innerHTML = '';
+
+  Object.keys(players).forEach(id=>{
+    if(id === playerId) return;
+
+    const p = players[id];
+    const div = document.createElement('div');
+    div.innerHTML = `Jugador: ${id.substring(0,5)} HP:${p.hp}`;
+    container.appendChild(div);
+  });
+}
+
+async function shoot(){
+  if(!currentMatch) return;
+
+  const targets = Object.keys(players).filter(id=>id !== playerId);
+  if(targets.length === 0) return;
+
+  // MVP: golpea al primer objetivo (luego cambiamos a raycast real)
+  const targetId = targets[0];
+  const target = players[targetId];
+
+  const newHp = Math.max((target.hp || 100) - 20, 0);
+
+  await db.collection('matches').doc(currentMatch)
+    .collection('players').doc(targetId)
+    .update({ hp:newHp });
+}
+
+document.getElementById('scanBtn').addEventListener('click', scanQR);
+document.getElementById('shootBtn').addEventListener('click', shoot);
+
+(async()=>{
+  await initAuth();
+  await initCamera();
+  initGPS();
+})();
+</script>
+</body>
+</html>
